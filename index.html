@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Plataforma Educativa – Ejemplo Integral</title>
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React y ReactDOM (CDN de desarrollo) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- React Router DOM (para navegación) -->
+  <script src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.development.js"></script>
+  <!-- PDF.js (CDN) -->
+  <script src="https://unpkg.com/pdfjs-dist@3.3.122/build/pdf.min.js"></script>
+  
+  <!-- 
+    Habilita Babel en el navegador para interpretar JSX. 
+    Solo para propósitos de DEMO. En producción se debe compilar con Babel/webpack/Vite/etc.
+  -->
+  <script type="text/babel">
+    /********************************************************
+     * CONFIGURACIÓN E INICIALIZACIÓN DE TAILWIND (opcional)
+     * Paleta minimalista en blancos y negros.
+     *******************************************************/
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#000000",   // Negro
+            secondary: "#ffffff", // Blanco
+            accent: "#444444",    // Gris para resaltar
+          },
+        },
+      },
+    };
+
+    /********************************************************
+     * IMPORTACIONES BÁSICAS (React, ReactDOM, React Router)
+     ********************************************************/
+    const {
+      HashRouter,
+      Routes,
+      Route,
+      Link,
+      useNavigate,
+      useParams,
+      NavLink,
+    } = ReactRouterDOM;
+
+    /********************************************************
+     * CONTEXTOS Y HOOKS DE ESTADO GLOBAL
+     * 
+     * Se creará un GlobalContext que compartirá las asignaturas,
+     * temáticas, slides, notas, favoritos, flashcards, preguntas,
+     * exámenes y desempeño.
+     * 
+     * Para simplificar se guardará todo en un objeto global 
+     * y se sincronizará con localStorage.
+     ********************************************************/
+    const GlobalContext = React.createContext();
+
+    function GlobalProvider({ children }) {
+      // Estado global que refleje toda la data necesaria
+      // Se inicializa desde localStorage, si existe
+      const [globalState, setGlobalState] = React.useState(() => {
+        const storedState = localStorage.getItem("eduAppData");
+        if (storedState) {
+          return JSON.parse(storedState);
+        } else {
+          // Estructura base si no hay nada en localStorage
+          return {
+            subjects: [
+              {
+                id: "matematicas",
+                nombre: "Matemáticas",
+                temas: [
+                  {
+                    id: "algebra",
+                    nombre: "Álgebra",
+                    pdfUrl: "algebra.pdf",
+                    explicacionesHTML: "<h2>Explicación de Álgebra</h2><p>Aquí iría el contenido HTML detallado...</p>",
+                  },
+                  {
+                    id: "geometria",
+                    nombre: "Geometría",
+                    pdfUrl: "geometria.pdf",
+                    explicacionesHTML: "<h2>Explicación de Geometría</h2><p>Contenido de geometría...</p>",
+                  },
+                ],
+              },
+              {
+                id: "historia",
+                nombre: "Historia",
+                temas: [
+                  {
+                    id: "edad-media",
+                    nombre: "Edad Media",
+                    pdfUrl: "edad-media.pdf",
+                    explicacionesHTML: "<h2>La Edad Media</h2><p>Contenido detallado de la Edad Media...</p>",
+                  },
+                ],
+              },
+            ],
+            // Se asume un array de slides "favoritas" en base a (subjectId, temaId, numeroDiapositiva)
+            favoritos: [],
+            // Notas en base a la diapositiva (subjectId, temaId, slideIndex) -> texto
+            notas: [],
+            // Preguntas organizadas similarmente (subjectId, temaId, slideIndex, questionId, questionText, choices, correctAnswer)
+            preguntas: [
+              {
+                id: "q1",
+                subjectId: "matematicas",
+                temaId: "algebra",
+                slideIndex: 0,
+                text: "¿Cuál es el valor de x en la ecuación 2x = 10?",
+                choices: ["x=2", "x=5", "x=10"],
+                correctAnswerIndex: 1,
+              },
+              {
+                id: "q2",
+                subjectId: "matematicas",
+                temaId: "geometria",
+                slideIndex: 2,
+                text: "¿Cuál es la suma de los ángulos de un triángulo?",
+                choices: ["180°", "360°", "90°"],
+                correctAnswerIndex: 0,
+              },
+            ],
+            // Flashcards en base a (subjectId, temaId, front, back)
+            flashcards: [
+              {
+                id: "f1",
+                subjectId: "matematicas",
+                temaId: "algebra",
+                front: "Ecuaciones lineales",
+                back: "Las ecuaciones lineales tienen la forma ax + b = 0",
+              },
+            ],
+            // Estado de examen y simulación (guardado de exámenes, resultados, etc.)
+            examenes: [],
+            // Datos de desempeño (podemos guardar estructura de aciertos, tiempos, etc.)
+            desempeno: {
+              // Ejemplo: { subjectId: { temaId: { correctas: 0, incorrectas: 0, tiempo: 0, ...}}}
+            },
+          };
+        }
+      });
+
+      // Sincroniza cambios en globalState con localStorage
+      React.useEffect(() => {
+        localStorage.setItem("eduAppData", JSON.stringify(globalState));
+      }, [globalState]);
+
+      return (
+        <GlobalContext.Provider value={{ globalState, setGlobalState }}>
+          {children}
+        </GlobalContext.Provider>
+      );
+    }
+
+    /********************************************************
+     * HOOKS DE COMODIDAD PARA ACCESO AL CONTEXTO
+     ********************************************************/
+    function useGlobalContext() {
+      return React.useContext(GlobalContext);
+    }
+
+    /********************************************************
+     * COMPONENTE PRINCIPAL DE LA APLICACIÓN
+     ********************************************************/
+    function App() {
+      return (
+        <HashRouter>
+          <div className="bg-secondary min-h-screen text-primary">
+            <Header />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/subjects" element={<Subjects />} />
+              <Route path="/subjects/:subjectId" element={<Temas />} />
+              <Route
+                path="/subjects/:subjectId/:temaId/slides"
+                element={<PDFSlidesView />}
+              />
+              <Route path="/favoritos" element={<Favoritos />} />
+              <Route path="/notas" element={<Notas />} />
+              <Route path="/preguntas" element={<Preguntas />} />
+              <Route path="/flashcards" element={<Flashcards />} />
+              <Route path="/examen" element={<Examen />} />
+              <Route path="/desempeno" element={<Desempeno />} />
+            </Routes>
+          </div>
+        </HashRouter>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: HEADER
+     * Barra superior con navegación a secciones principales.
+     ********************************************************/
+    function Header() {
+      return (
+        <header className="bg-primary text-secondary p-4 flex justify-between items-center">
+          <Link to="/" className="font-bold text-xl">
+            Plataforma Educativa
+          </Link>
+          <nav className="flex space-x-4">
+            <NavLink
+              to="/subjects"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Asignaturas
+            </NavLink>
+            <NavLink
+              to="/favoritos"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Favoritos
+            </NavLink>
+            <NavLink
+              to="/notas"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Notas
+            </NavLink>
+            <NavLink
+              to="/preguntas"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Preguntas
+            </NavLink>
+            <NavLink
+              to="/flashcards"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Flashcards
+            </NavLink>
+            <NavLink
+              to="/examen"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Examen
+            </NavLink>
+            <NavLink
+              to="/desempeno"
+              className={({ isActive }) =>
+                isActive ? "font-bold underline" : ""
+              }
+            >
+              Desempeño
+            </NavLink>
+          </nav>
+        </header>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: HOME
+     * Pantalla de inicio con un diseño minimalista.
+     ********************************************************/
+    function Home() {
+      return (
+        <main className="p-8 text-center">
+          <h1 className="text-3xl font-bold mb-4">Bienvenido a la Plataforma Educativa</h1>
+          <p className="text-lg mb-8">
+            Selecciona una asignatura y temática para empezar a estudiar.
+          </p>
+          <Link
+            to="/subjects"
+            className="bg-primary text-secondary px-4 py-2 rounded hover:bg-accent"
+          >
+            Ir a Asignaturas
+          </Link>
+        </main>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: SUBJECTS
+     * Muestra la lista de asignaturas en "cajas".
+     ********************************************************/
+    function Subjects() {
+      const { globalState } = useGlobalContext();
+      const { subjects } = globalState;
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Asignaturas</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {subjects.map((subj) => (
+              <Link
+                key={subj.id}
+                to={`/subjects/${subj.id}`}
+                className="border border-primary rounded p-4 hover:bg-accent cursor-pointer"
+              >
+                <h3 className="text-xl font-semibold">{subj.nombre}</h3>
+              </Link>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: TEMAS
+     * Muestra las temáticas de una asignatura seleccionada.
+     ********************************************************/
+    function Temas() {
+      const { subjectId } = useParams();
+      const { globalState } = useGlobalContext();
+
+      const subject = globalState.subjects.find((s) => s.id === subjectId);
+
+      if (!subject) {
+        return <div className="p-8">Asignatura no encontrada.</div>;
+      }
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">
+            Temáticas de {subject.nombre}
+          </h2>
+          <div className="space-y-4">
+            {subject.temas.map((tema) => (
+              <Link
+                key={tema.id}
+                to={`/subjects/${subjectId}/${tema.id}/slides`}
+                className="block border border-primary p-4 rounded hover:bg-accent"
+              >
+                {tema.nombre}
+              </Link>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: PDFSlidesView
+     * Muestra las diapositivas (PDF) y los íconos funcionales
+     * al estilo TikTok. Cada slide se visualiza en pantalla
+     * completa con desplazamiento vertical.
+     ********************************************************/
+    function PDFSlidesView() {
+      const { subjectId, temaId } = useParams();
+      const { globalState } = useGlobalContext();
+      const navigate = useNavigate();
+      const subject = globalState.subjects.find((s) => s.id === subjectId);
+      if (!subject) {
+        return <div className="p-8">Asignatura no encontrada.</div>;
+      }
+      const tema = subject.temas.find((t) => t.id === temaId);
+      if (!tema) {
+        return <div className="p-8">Temática no encontrada.</div>;
+      }
+
+      // Manejo de PDF con PDF.js
+      const [pdfDoc, setPdfDoc] = React.useState(null);
+      const [currentPage, setCurrentPage] = React.useState(1);
+      const [totalPages, setTotalPages] = React.useState(0);
+
+      // Modales
+      const [showExplanation, setShowExplanation] = React.useState(false);
+
+      React.useEffect(() => {
+        // Carga el PDF
+        const loadingTask = pdfjsLib.getDocument(tema.pdfUrl);
+        loadingTask.promise.then((doc) => {
+          setPdfDoc(doc);
+          setTotalPages(doc.numPages);
+        });
+      }, [tema.pdfUrl]);
+
+      // Renderiza una página PDF en un canvas
+      const canvasRef = React.useRef(null);
+      React.useEffect(() => {
+        if (!pdfDoc) return;
+        const renderPage = async () => {
+          const page = await pdfDoc.getPage(currentPage);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = canvasRef.current;
+          const context = canvas.getContext("2d");
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          const renderContext = {
+            canvasContext: context,
+            viewport: viewport,
+          };
+          await page.render(renderContext).promise;
+        };
+        renderPage();
+      }, [pdfDoc, currentPage]);
+
+      // Manejo estilo “TikTok”: scroll vertical
+      // Para simplificar, usamos botones de anterior/siguiente.
+      const handlePreviousSlide = () => {
+        if (currentPage > 1) {
+          setCurrentPage(currentPage - 1);
+        }
+      };
+      const handleNextSlide = () => {
+        if (currentPage < totalPages) {
+          setCurrentPage(currentPage + 1);
+        }
+      };
+
+      // Botones funcionales a la izquierda
+      return (
+        <div className="relative w-full h-screen flex flex-col items-center bg-secondary">
+          {/* Botón Volver */}
+          <button
+            onClick={() => navigate(-1)}
+            className="absolute top-4 left-4 bg-primary text-secondary px-4 py-2 rounded"
+          >
+            Volver
+          </button>
+
+          {/* Íconos estilo “TikTok” en borde izquierdo */}
+          <div className="absolute left-0 top-1/2 transform -translate-y-1/2 flex flex-col space-y-4 ml-2">
+            {/* Explicación */}
+            <button
+              onClick={() => setShowExplanation(!showExplanation)}
+              className="bg-primary text-secondary p-2 rounded"
+            >
+              Explicación
+            </button>
+            {/* Favorita */}
+            <FavoritaIcon subjectId={subjectId} temaId={temaId} slideIndex={currentPage - 1} />
+            {/* Notas */}
+            <NotasIcon subjectId={subjectId} temaId={temaId} slideIndex={currentPage - 1} />
+            {/* Preguntas */}
+            <PreguntasIcon subjectId={subjectId} temaId={temaId} slideIndex={currentPage - 1} />
+            {/* Flashcards */}
+            <FlashcardsIcon subjectId={subjectId} temaId={temaId} slideIndex={currentPage - 1} />
+          </div>
+
+          {/* Modal de Explicación */}
+          {showExplanation && (
+            <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="bg-secondary p-6 rounded shadow-lg max-w-2xl">
+                <button
+                  onClick={() => setShowExplanation(false)}
+                  className="bg-primary text-secondary px-2 py-1 rounded mb-2"
+                >
+                  Cerrar
+                </button>
+                {/* Renderizamos la explicación en HTML dinámicamente */}
+                <div
+                  className="text-primary"
+                  dangerouslySetInnerHTML={{ __html: tema.explicacionesHTML }}
+                ></div>
+              </div>
+            </div>
+          )}
+
+          {/* Contenedor del Canvas */}
+          <div className="flex-grow flex items-center justify-center">
+            <canvas ref={canvasRef} className="border border-primary" />
+          </div>
+
+          {/* Controles de navegación de páginas */}
+          <div className="flex space-x-4 my-4">
+            <button
+              onClick={handlePreviousSlide}
+              disabled={currentPage === 1}
+              className="bg-primary text-secondary px-4 py-2 rounded disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <span className="text-primary">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={handleNextSlide}
+              disabled={currentPage === totalPages}
+              className="bg-primary text-secondary px-4 py-2 rounded disabled:opacity-50"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTES ÍCONOS EXTRAS: (Favorita, Notas, Preguntas, Flashcards)
+     * Colocados a lo largo del borde izquierdo.
+     ********************************************************/
+
+    // 1. FavoritaIcon
+    function FavoritaIcon({ subjectId, temaId, slideIndex }) {
+      const { globalState, setGlobalState } = useGlobalContext();
+      const { favoritos } = globalState;
+
+      const isFavorito = favoritos.some(
+        (f) =>
+          f.subjectId === subjectId && f.temaId === temaId && f.slideIndex === slideIndex
+      );
+
+      const toggleFavorito = () => {
+        if (isFavorito) {
+          // quitar de favoritos
+          setGlobalState((prev) => ({
+            ...prev,
+            favoritos: prev.favoritos.filter(
+              (f) =>
+                !(
+                  f.subjectId === subjectId &&
+                  f.temaId === temaId &&
+                  f.slideIndex === slideIndex
+                )
+            ),
+          }));
+        } else {
+          // agregar a favoritos
+          setGlobalState((prev) => ({
+            ...prev,
+            favoritos: [
+              ...prev.favoritos,
+              { subjectId, temaId, slideIndex, addedAt: Date.now() },
+            ],
+          }));
+        }
+      };
+
+      return (
+        <button
+          onClick={toggleFavorito}
+          className={`p-2 rounded ${
+            isFavorito ? "bg-red-600 text-white" : "bg-primary text-secondary"
+          }`}
+        >
+          {isFavorito ? "❤️" : "🤍"}
+        </button>
+      );
+    }
+
+    // 2. NotasIcon
+    function NotasIcon({ subjectId, temaId, slideIndex }) {
+      const [showModal, setShowModal] = React.useState(false);
+      return (
+        <>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-primary text-secondary p-2 rounded"
+          >
+            📝
+          </button>
+          {showModal && (
+            <NotasModal
+              subjectId={subjectId}
+              temaId={temaId}
+              slideIndex={slideIndex}
+              onClose={() => setShowModal(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    // Modal de Notas
+    function NotasModal({ subjectId, temaId, slideIndex, onClose }) {
+      const { globalState, setGlobalState } = useGlobalContext();
+      const [nota, setNota] = React.useState("");
+
+      // Buscamos si existe una nota previa para esta diapositiva
+      React.useEffect(() => {
+        const existingNote = globalState.notas.find(
+          (n) =>
+            n.subjectId === subjectId && n.temaId === temaId && n.slideIndex === slideIndex
+        );
+        if (existingNote) {
+          setNota(existingNote.text);
+        } else {
+          setNota("");
+        }
+      }, [subjectId, temaId, slideIndex, globalState.notas]);
+
+      const saveNote = () => {
+        // Actualiza o crea la nota
+        setGlobalState((prev) => {
+          const existingIndex = prev.notas.findIndex(
+            (n) =>
+              n.subjectId === subjectId && n.temaId === temaId && n.slideIndex === slideIndex
+          );
+          if (existingIndex >= 0) {
+            // Actualizar
+            const updatedNotes = [...prev.notas];
+            updatedNotes[existingIndex] = {
+              ...updatedNotes[existingIndex],
+              text: nota,
+            };
+            return { ...prev, notas: updatedNotes };
+          } else {
+            // Insertar nueva
+            return {
+              ...prev,
+              notas: [
+                ...prev.notas,
+                { subjectId, temaId, slideIndex, text: nota },
+              ],
+            };
+          }
+        });
+        onClose();
+      };
+
+      return (
+        <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-secondary p-6 rounded shadow-lg max-w-xl w-full">
+            <h3 className="text-xl font-bold mb-2">Notas</h3>
+            <textarea
+              className="w-full p-2 border border-primary rounded mb-4 text-primary"
+              rows={6}
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+            ></textarea>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={onClose}
+                className="bg-accent text-secondary px-4 py-2 rounded"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveNote}
+                className="bg-primary text-secondary px-4 py-2 rounded"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // 3. PreguntasIcon
+    function PreguntasIcon({ subjectId, temaId, slideIndex }) {
+      const [showModal, setShowModal] = React.useState(false);
+      return (
+        <>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-primary text-secondary p-2 rounded"
+          >
+            ❓
+          </button>
+          {showModal && (
+            <PreguntasModal
+              subjectId={subjectId}
+              temaId={temaId}
+              slideIndex={slideIndex}
+              onClose={() => setShowModal(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    // Modal de Preguntas (tipo test)
+    function PreguntasModal({ subjectId, temaId, slideIndex, onClose }) {
+      const { globalState } = useGlobalContext();
+      // Filtramos preguntas para esta diapositiva
+      const preguntas = globalState.preguntas.filter(
+        (q) =>
+          q.subjectId === subjectId && q.temaId === temaId && q.slideIndex === slideIndex
+      );
+
+      if (preguntas.length === 0) {
+        return (
+          <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="bg-secondary p-6 rounded shadow-lg max-w-xl w-full">
+              <button
+                onClick={onClose}
+                className="bg-primary text-secondary px-2 py-1 rounded mb-2"
+              >
+                Cerrar
+              </button>
+              <p className="text-primary">No hay preguntas para esta diapositiva.</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-secondary p-6 rounded shadow-lg max-w-xl w-full">
+            <button
+              onClick={onClose}
+              className="bg-primary text-secondary px-2 py-1 rounded mb-4"
+            >
+              Cerrar
+            </button>
+            {preguntas.map((q) => (
+              <PreguntaItem key={q.id} pregunta={q} />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Componente para cada pregunta concreta
+    function PreguntaItem({ pregunta }) {
+      const { text, choices, correctAnswerIndex } = pregunta;
+      const [selected, setSelected] = React.useState(null);
+      const [feedback, setFeedback] = React.useState("");
+
+      const verificarRespuesta = () => {
+        if (selected === correctAnswerIndex) {
+          setFeedback("¡Correcto!");
+        } else {
+          setFeedback("Respuesta Incorrecta");
+        }
+      };
+
+      return (
+        <div className="mb-4 border-b border-primary pb-4">
+          <p className="font-bold mb-2 text-primary">{text}</p>
+          <div className="flex flex-col space-y-2">
+            {choices.map((c, idx) => (
+              <label key={idx} className="flex items-center space-x-2 text-primary">
+                <input
+                  type="radio"
+                  name={text}
+                  checked={selected === idx}
+                  onChange={() => setSelected(idx)}
+                />
+                <span>{c}</span>
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={verificarRespuesta}
+            className="mt-2 bg-primary text-secondary px-4 py-1 rounded"
+          >
+            Verificar
+          </button>
+          {feedback && <p className="mt-2">{feedback}</p>}
+        </div>
+      );
+    }
+
+    // 4. FlashcardsIcon
+    function FlashcardsIcon({ subjectId, temaId, slideIndex }) {
+      const [showModal, setShowModal] = React.useState(false);
+      return (
+        <>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-primary text-secondary p-2 rounded"
+          >
+            💡
+          </button>
+          {showModal && (
+            <FlashcardsModal
+              subjectId={subjectId}
+              temaId={temaId}
+              slideIndex={slideIndex}
+              onClose={() => setShowModal(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    // Modal de Flashcards
+    // Aquí damos la opción de crear una nueva Flashcard asociada a esta diapositiva.
+    function FlashcardsModal({ subjectId, temaId, slideIndex, onClose }) {
+      const { globalState, setGlobalState } = useGlobalContext();
+      const [front, setFront] = React.useState("");
+      const [back, setBack] = React.useState("");
+      const [createdMsg, setCreatedMsg] = React.useState("");
+
+      const createFlashcard = () => {
+        if (front.trim() && back.trim()) {
+          setGlobalState((prev) => ({
+            ...prev,
+            flashcards: [
+              ...prev.flashcards,
+              {
+                id: `fc_${Date.now()}`,
+                subjectId,
+                temaId,
+                slideIndex,
+                front,
+                back,
+              },
+            ],
+          }));
+          setCreatedMsg("Flashcard creada correctamente.");
+          setFront("");
+          setBack("");
+        }
+      };
+
+      return (
+        <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-secondary p-6 rounded shadow-lg max-w-xl w-full">
+            <button
+              onClick={onClose}
+              className="bg-primary text-secondary px-2 py-1 rounded mb-4"
+            >
+              Cerrar
+            </button>
+            <h3 className="text-xl font-bold mb-2 text-primary">Crear Flashcard</h3>
+            <div className="mb-2">
+              <label className="block text-primary font-semibold mb-1">Front:</label>
+              <input
+                type="text"
+                className="w-full p-2 border border-primary rounded text-primary"
+                value={front}
+                onChange={(e) => setFront(e.target.value)}
+              />
+            </div>
+            <div className="mb-2">
+              <label className="block text-primary font-semibold mb-1">Back:</label>
+              <input
+                type="text"
+                className="w-full p-2 border border-primary rounded text-primary"
+                value={back}
+                onChange={(e) => setBack(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={createFlashcard}
+              className="bg-primary text-secondary px-4 py-2 rounded"
+            >
+              Guardar
+            </button>
+            {createdMsg && <p className="text-green-600 mt-2">{createdMsg}</p>}
+          </div>
+        </div>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: FAVORITOS
+     * Lista todas las diapositivas marcadas como favoritas.
+     ********************************************************/
+    function Favoritos() {
+      const { globalState } = useGlobalContext();
+      const { favoritos, subjects } = globalState;
+
+      // Mapeamos el id de asignatura/tema con sus nombres para mostrar
+      const getSubjectName = (id) => {
+        const subj = subjects.find((s) => s.id === id);
+        return subj ? subj.nombre : "Desconocido";
+      };
+      const getTemaName = (subjectId, temaId) => {
+        const subj = subjects.find((s) => s.id === subjectId);
+        if (!subj) return "Desconocido";
+        const tema = subj.temas.find((t) => t.id === temaId);
+        return tema ? tema.nombre : "Desconocido";
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Diapositivas Favoritas</h2>
+          {favoritos.length === 0 ? (
+            <p>No hay diapositivas favoritas aún.</p>
+          ) : (
+            <ul className="space-y-2">
+              {favoritos.map((fav, idx) => (
+                <li key={idx} className="border p-2 rounded">
+                  {getSubjectName(fav.subjectId)} - {getTemaName(fav.subjectId, fav.temaId)} - Diapositiva{" "}
+                  {fav.slideIndex + 1}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: NOTAS
+     * Muestra todas las notas guardadas por asignatura y temática.
+     ********************************************************/
+    function Notas() {
+      const { globalState } = useGlobalContext();
+      const { notas, subjects } = globalState;
+
+      // Agrupar las notas por asignatura->tema
+      const agrupadas = {};
+      notas.forEach((n) => {
+        const subj = n.subjectId;
+        const tema = n.temaId;
+        if (!agrupadas[subj]) agrupadas[subj] = {};
+        if (!agrupadas[subj][tema]) agrupadas[subj][tema] = [];
+        agrupadas[subj][tema].push(n);
+      });
+
+      // Funciones para nombres
+      const getSubjectName = (id) => {
+        const subj = subjects.find((s) => s.id === id);
+        return subj ? subj.nombre : "Desconocido";
+      };
+      const getTemaName = (subjectId, temaId) => {
+        const subj = subjects.find((s) => s.id === subjectId);
+        if (!subj) return "Desconocido";
+        const tema = subj.temas.find((t) => t.id === temaId);
+        return tema ? tema.nombre : "Desconocido";
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Notas Guardadas</h2>
+          {Object.keys(agrupadas).length === 0 ? (
+            <p>No hay notas guardadas.</p>
+          ) : (
+            Object.keys(agrupadas).map((subj) => (
+              <div key={subj} className="mb-4">
+                <h3 className="text-xl font-semibold mb-2">
+                  {getSubjectName(subj)}
+                </h3>
+                {Object.keys(agrupadas[subj]).map((tema) => (
+                  <div key={tema} className="ml-4 mb-2">
+                    <h4 className="font-semibold">{getTemaName(subj, tema)}</h4>
+                    <ul className="ml-4 list-disc">
+                      {agrupadas[subj][tema].map((nota, idx) => (
+                        <li key={idx} className="mb-2">
+                          <strong>Diapositiva {nota.slideIndex + 1}:</strong>{" "}
+                          {nota.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: PREGUNTAS
+     * Banco de Preguntas, organizado por asignatura/tema.
+     * Permite repasar y obtener retroalimentación.
+     ********************************************************/
+    function Preguntas() {
+      const { globalState } = useGlobalContext();
+      const { preguntas, subjects } = globalState;
+
+      // Agrupamos preguntas por (subjectId, temaId)
+      const agrupadas = {};
+      preguntas.forEach((p) => {
+        if (!agrupadas[p.subjectId]) agrupadas[p.subjectId] = {};
+        if (!agrupadas[p.subjectId][p.temaId]) agrupadas[p.subjectId][p.temaId] = [];
+        agrupadas[p.subjectId][p.temaId].push(p);
+      });
+
+      const getSubjectName = (id) => {
+        const subj = subjects.find((s) => s.id === id);
+        return subj ? subj.nombre : "Desconocido";
+      };
+      const getTemaName = (subjectId, temaId) => {
+        const subj = subjects.find((s) => s.id === subjectId);
+        if (!subj) return "Desconocido";
+        const tema = subj.temas.find((t) => t.id === temaId);
+        return tema ? tema.nombre : "Desconocido";
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Banco de Preguntas</h2>
+          {Object.keys(agrupadas).length === 0 ? (
+            <p>No hay preguntas almacenadas.</p>
+          ) : (
+            Object.keys(agrupadas).map((subj) => (
+              <div key={subj} className="mb-4">
+                <h3 className="text-xl font-semibold mb-2">{getSubjectName(subj)}</h3>
+                {Object.keys(agrupadas[subj]).map((tema) => (
+                  <div key={tema} className="ml-4 mb-2">
+                    <h4 className="font-semibold">{getTemaName(subj, tema)}</h4>
+                    {agrupadas[subj][tema].map((q) => (
+                      <PreguntaItem key={q.id} pregunta={q} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: FLASHCARDS
+     * Colección de flashcards, con spaced repetition.
+     * Se pueden organizar por asignatura y temática.
+     ********************************************************/
+    function Flashcards() {
+      const { globalState } = useGlobalContext();
+      const { flashcards, subjects } = globalState;
+
+      // Agrupamos igual que en preguntas
+      const agrupadas = {};
+      flashcards.forEach((fc) => {
+        if (!agrupadas[fc.subjectId]) agrupadas[fc.subjectId] = {};
+        if (!agrupadas[fc.subjectId][fc.temaId]) agrupadas[fc.subjectId][fc.temaId] = [];
+        agrupadas[fc.subjectId][fc.temaId].push(fc);
+      });
+
+      const getSubjectName = (id) => {
+        const subj = subjects.find((s) => s.id === id);
+        return subj ? subj.nombre : "Desconocido";
+      };
+      const getTemaName = (subjectId, temaId) => {
+        const subj = subjects.find((s) => s.id === subjectId);
+        if (!subj) return "Desconocido";
+        const tema = subj.temas.find((t) => t.id === temaId);
+        return tema ? tema.nombre : "Desconocido";
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Colección de Flashcards</h2>
+          {Object.keys(agrupadas).length === 0 ? (
+            <p>No hay flashcards creadas.</p>
+          ) : (
+            Object.keys(agrupadas).map((subj) => (
+              <div key={subj} className="mb-4">
+                <h3 className="text-xl font-semibold mb-2">{getSubjectName(subj)}</h3>
+                {Object.keys(agrupadas[subj]).map((tema) => (
+                  <div key={tema} className="ml-4 mb-2">
+                    <h4 className="font-semibold">{getTemaName(subj, tema)}</h4>
+                    <div className="flex flex-wrap gap-4">
+                      {agrupadas[subj][tema].map((fc) => (
+                        <FlashcardItem key={fc.id} flashcard={fc} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+      );
+    }
+
+    // Componente para una flashcard con “giro automático” (básico).
+    function FlashcardItem({ flashcard }) {
+      const [flipped, setFlipped] = React.useState(false);
+
+      // Implementación de “giro automático”: cada 3 segundos cambia
+      React.useEffect(() => {
+        const interval = setInterval(() => {
+          setFlipped((prev) => !prev);
+        }, 3000);
+        return () => clearInterval(interval);
+      }, []);
+
+      return (
+        <div
+          className={`w-40 h-40 border border-primary relative perspective cursor-pointer`}
+        >
+          <div
+            className={`absolute w-full h-full transition-transform duration-500 ${
+              flipped ? "rotate-y-180" : ""
+            }`}
+          >
+            {/* FRONT */}
+            <div className="bg-accent text-secondary w-full h-full flex items-center justify-center backface-hidden">
+              {flashcard.front}
+            </div>
+            {/* BACK */}
+            <div className="bg-primary text-secondary w-full h-full flex items-center justify-center rotate-y-180 backface-hidden absolute top-0 left-0">
+              {flashcard.back}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: EXAMEN
+     * Generador de exámenes y simulaciones cronometradas.
+     * Sencillo ejemplo.
+     ********************************************************/
+    function Examen() {
+      const { globalState } = useGlobalContext();
+      const { preguntas, subjects } = globalState;
+
+      // Elección de preguntas para crear examen
+      const [selectedSubject, setSelectedSubject] = React.useState("");
+      const [selectedTema, setSelectedTema] = React.useState("");
+      const [examenPreguntas, setExamenPreguntas] = React.useState([]);
+
+      const handleGenerarExamen = () => {
+        // Filtra preguntas por los parámetros elegidos
+        const filtered = preguntas.filter((p) => {
+          if (selectedSubject && p.subjectId !== selectedSubject) return false;
+          if (selectedTema && p.temaId !== selectedTema) return false;
+          return true;
+        });
+        // Para ejemplo, tomamos todas
+        setExamenPreguntas(filtered);
+      };
+
+      // Simulación cronometrada
+      const [tiempo, setTiempo] = React.useState(0);
+      const [corriendo, setCorriendo] = React.useState(false);
+
+      React.useEffect(() => {
+        let interval;
+        if (corriendo) {
+          interval = setInterval(() => {
+            setTiempo((prev) => prev + 1);
+          }, 1000);
+        }
+        return () => clearInterval(interval);
+      }, [corriendo]);
+
+      const startSimulation = () => {
+        setTiempo(0);
+        setCorriendo(true);
+      };
+      const stopSimulation = () => {
+        setCorriendo(false);
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Generador de Exámenes</h2>
+          <div className="border border-primary p-4 mb-4 rounded">
+            <h3 className="font-semibold mb-2 text-primary">Seleccionar preguntas</h3>
+            <div className="mb-2">
+              <label className="block">Asignatura:</label>
+              <select
+                className="border p-1 rounded"
+                value={selectedSubject}
+                onChange={(e) => {
+                  setSelectedSubject(e.target.value);
+                  setSelectedTema("");
+                }}
+              >
+                <option value="">Todas</option>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Si se ha elegido una asignatura, mostramos sus temas */}
+            {selectedSubject && (
+              <div className="mb-2">
+                <label className="block">Tema:</label>
+                <select
+                  className="border p-1 rounded"
+                  value={selectedTema}
+                  onChange={(e) => setSelectedTema(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {subjects
+                    .find((s) => s.id === selectedSubject)
+                    .temas.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nombre}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+            <button
+              onClick={handleGenerarExamen}
+              className="bg-primary text-secondary px-4 py-2 rounded"
+            >
+              Generar Examen
+            </button>
+          </div>
+          {/* Muestra preguntas generadas */}
+          <div className="mb-8">
+            <h3 className="font-semibold mb-2 text-primary">Preguntas del examen:</h3>
+            {examenPreguntas.length === 0 ? (
+              <p>No hay preguntas seleccionadas.</p>
+            ) : (
+              examenPreguntas.map((p) => <PreguntaItem key={p.id} pregunta={p} />)
+            )}
+          </div>
+
+          <h2 className="text-2xl font-bold mb-4">Simulación de Examen</h2>
+          <div className="border border-primary p-4 rounded">
+            <p className="mb-2">Tiempo transcurrido: {tiempo} segundos</p>
+            <div className="space-x-2">
+              <button
+                onClick={startSimulation}
+                className="bg-primary text-secondary px-4 py-2 rounded"
+              >
+                Iniciar
+              </button>
+              <button
+                onClick={stopSimulation}
+                className="bg-accent text-secondary px-4 py-2 rounded"
+              >
+                Detener
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /********************************************************
+     * COMPONENTE: DESEMPENO
+     * Muestra estadísticas de rendimiento, gráficos, etc.
+     * Aquí solo se hará una demostración básica con porcentajes.
+     ********************************************************/
+    function Desempeno() {
+      const { globalState } = useGlobalContext();
+      // Supongamos que no tenemos registro detallado, 
+      // haremos un mock de ejemplo.
+      // Podrías usar globalState.desempeno si lo hubieras trackeado.
+      const mockStats = {
+        matematicas: { correctas: 10, incorrectas: 2, tiempo: 1200 },
+        historia: { correctas: 5, incorrectas: 5, tiempo: 900 },
+      };
+
+      // Calculamos porcentajes
+      const calcPorcentaje = (corr, inc) => {
+        const total = corr + inc;
+        return total > 0 ? ((corr / total) * 100).toFixed(1) : 0;
+      };
+
+      return (
+        <section className="p-8">
+          <h2 className="text-2xl font-bold mb-4">Desempeño</h2>
+          <p>
+            <em>
+              (Esta sección puede ampliarse con gráficos reales y datos en
+              tiempo real)
+            </em>
+          </p>
+          <div className="mt-4">
+            {Object.keys(mockStats).map((asig, i) => {
+              const { correctas, incorrectas, tiempo } = mockStats[asig];
+              return (
+                <div key={i} className="border p-4 mb-4 rounded">
+                  <h3 className="text-xl font-semibold mb-2">{asig}</h3>
+                  <p>Aciertos: {correctas}</p>
+                  <p>Errores: {incorrectas}</p>
+                  <p>Porcentaje: {calcPorcentaje(correctas, incorrectas)}%</p>
+                  <p>Tiempo invertido: {tiempo} segundos</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      );
+    }
+
+    /********************************************************
+     * RENDERIZAR LA APLICACIÓN
+     ********************************************************/
+    const rootElement = document.getElementById("root");
+    ReactDOM.createRoot(rootElement).render(
+      <React.StrictMode>
+        <GlobalProvider>
+          <App />
+        </GlobalProvider>
+      </React.StrictMode>
+    );
+  </script>
+
+  <style>
+    /* 
+      Ejemplo de estilo de "flip" de Flashcard con perspectiva 
+      (rotar en eje Y). 
+    */
+    .perspective {
+      perspective: 1000px;
+    }
+    .rotate-y-180 {
+      transform: rotateY(180deg);
+    }
+    .backface-hidden {
+      backface-visibility: hidden;
+    }
+  </style>
+</head>
+<body class="bg-secondary text-primary">
+  <!-- 
+    Contenedor raíz donde se montará toda la app de React 
+  -->
+  <div id="root"></div>
+</body>
+</html>
